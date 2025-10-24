@@ -562,3 +562,4 @@ xcuserdata
 *.xcuserstate
 
 # 3rdParty
+*.pdf
