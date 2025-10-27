@@ -3,6 +3,7 @@
 
 #define WORKGROUP_SIZE 32
 #define HALF_PI 1.57079632679
+
 layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
 layout(set = 0, binding = 0) uniform CameraBufferObject {
@@ -66,6 +67,12 @@ void main() {
     uint bladeID =  gl_GlobalInvocationID.x;
     if (bladeID >= totalBladeCount) { return; }
 
+    // Constants
+    const float orientationCullThreshold = 0.9;
+    const float cullingDistanceMax = 26;
+    const uint cullingBaseCount = 16;
+    const float cullingFrustumBoundTolerance = 0.05f;
+
     // Unpack the blade data
     Blade blade = blades[bladeID];
     vec3 v0 = blade.v0.xyz; 
@@ -122,27 +129,53 @@ void main() {
     blade.v1.xyz = v1_corrected;
     blade.v2.xyz = v2_corrected;
 
-
     blades[bladeID] = blade;
 
 	// TODO: Cull blades that are too far away or not in the camera frustum and write them
 	// to the culled blades buffer
 	// Note: to do this, you will need to use an atomic operation to read and update numBlades.vertexCount
 	// You want to write the visible blades to the buffer without write conflicts between threads
-
-    bool visible = true;
     
     // Orientation culling 
-    vec3 viewDir = normalize((camera.pos - v0));
-    const float orientationCullThreshold = 0.9;
-    if (pow(dot(viewDir, side), 2) > orientationCullThreshold * orientationCullThreshold) {
-        visible = false;
+    vec3 viewVec = v0 - camera.pos;
+    if (pow(dot(normalize(viewVec), side), 2) > orientationCullThreshold * orientationCullThreshold) {
+        return;
     }
 
-    if (visible)
-    {
-        uint idx = atomicAdd(numBlades.vertexCount, 1);
-        culledBlades[idx] = blade;
+    // Frustum culling
+    vec3 mid = 0.25 * v0 + 0.5 * v1 + 0.25 * v2;
+
+    mat4 vpMat = camera.proj * camera.view;
+
+    vec4 ndcV0 = vpMat * vec4(v0, 1);
+    ndcV0.xyz /= ndcV0.w;
+
+    vec4 ndcMid = vpMat * vec4(mid, 1);
+    ndcMid.xyz /= ndcMid.w;
+
+    vec4 ndcV2 = vpMat * vec4(v2, 1);
+    ndcV2.xyz /= ndcV2.w;
+
+    float bound = 1 + cullingFrustumBoundTolerance;
+
+    bool v0InBound = inBounds(ndcV0.x, bound) && inBounds(ndcV0.y, bound) && inBounds(ndcV0.z * 2 - 1, bound);
+    bool midInBound = inBounds(ndcMid.x, bound) && inBounds(ndcMid.y, bound) && inBounds(ndcMid.z * 2 - 1, bound);
+    bool v2InBound = inBounds(ndcV2.x, bound) && inBounds(ndcV2.y, bound) && inBounds(ndcV2.z * 2 - 1, bound);
+
+    if (!v0InBound && !midInBound && !v2InBound) {
+        return;
     }
+
+    // Distance culling
+    float dProj = length(viewVec - up * dot(viewVec, up));
+    float cullingRatio = dProj / cullingDistanceMax;
+    if (mod(bladeID, cullingBaseCount) < cullingBaseCount * cullingRatio) {
+        return;
+    }
+
+    // Passed cullings, add to draw buffer
+    uint idx = atomicAdd(numBlades.vertexCount, 1);
+    culledBlades[idx] = blade;
 }
+
 
