@@ -5,8 +5,9 @@
 #include "Device.h"
 
 struct CameraBufferObject {
-  glm::mat4 viewMatrix;
-  glm::mat4 projectionMatrix;
+    glm::mat4 viewMatrix;
+    glm::mat4 projectionMatrix;
+    glm::vec3 position;
 };
 
 class Camera {

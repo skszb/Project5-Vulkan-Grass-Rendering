@@ -6,6 +6,7 @@ layout(quads, equal_spacing, ccw) in;
 layout(set = 0, binding = 0) uniform CameraBufferObject {
     mat4 view;
     mat4 proj;
+    vec3 pos;
 } camera;
 
 // TODO: Declare tessellation evaluation shader inputs and outputs
@@ -30,7 +31,7 @@ void main() {
 	// TODO: Use u and v to parameterize along the grass blade and output positions for each vertex of the grass blade
     // Unpack the blade data
     vec3 v0 = in_v0[0].xyz;
-    float dir = in_v0[0].w;
+    float rotation = in_v0[0].w;
 
     vec3 v1 = in_v1[0].xyz;
     float height = in_v1[0].w;
@@ -47,7 +48,7 @@ void main() {
     vec3 c = a + v * (b - a);
 
     vec3 t0 = normalize(b - a);
-    vec3 t1 = vec3(sin(dir), 0, cos(dir));
+    vec3 t1 = vec3(cos(rotation), 0, sin(rotation));
 
     vec3 c0 = c - width * t1;
     vec3 c1 = c + width * t1;
@@ -59,7 +60,7 @@ void main() {
 
     gl_Position = camera.proj * camera.view * vec4(pos, 1);
 
-    fragColor = vec3(1.0, 1.0, 1.0);
+    fragColor = vec3(0, 1.0, 0); // green
     fragTexCoord = vec2(u, v);
 }
  

@@ -14,5 +14,6 @@ layout(location = 0) out vec4 outColor;
 
 void main() {
     // TODO: Compute fragment color
-    outColor = vec4(fragTexCoord, 0, 1.0);
+    float occulsion = max(0.1, fragTexCoord.y);
+    outColor = vec4(fragColor * occulsion, 1.0);
 }

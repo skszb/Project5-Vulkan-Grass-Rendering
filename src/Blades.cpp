@@ -10,6 +10,7 @@ Blades::Blades(Device* device, VkCommandPool commandPool, float planeDim) : Mode
     std::vector<Blade> blades;
     blades.reserve(NUM_BLADES);
 
+    // Blades buffer
     for (int i = 0; i < NUM_BLADES; i++) {
         Blade currentBlade = Blade();
 
@@ -38,15 +39,26 @@ Blades::Blades(Device* device, VkCommandPool commandPool, float planeDim) : Mode
         blades.push_back(currentBlade);
     }
 
+    BufferUtils::CreateBufferFromData(device, commandPool, blades.data(), NUM_BLADES * sizeof(Blade), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, bladesBuffer, bladesBufferMemory);
+
+    // Culled blades buffer
+    BufferUtils::CreateBuffer(device, NUM_BLADES * sizeof(Blade), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, culledBladesBuffer, culledBladesBufferMemory);
+
+    // Indirect draw buffer
     BladeDrawIndirect indirectDraw;
     indirectDraw.vertexCount = NUM_BLADES;
     indirectDraw.instanceCount = 1;
     indirectDraw.firstVertex = 0;
     indirectDraw.firstInstance = 0;
 
-    BufferUtils::CreateBufferFromData(device, commandPool, blades.data(), NUM_BLADES * sizeof(Blade), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, bladesBuffer, bladesBufferMemory);
-    BufferUtils::CreateBuffer(device, NUM_BLADES * sizeof(Blade), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, culledBladesBuffer, culledBladesBufferMemory);
     BufferUtils::CreateBufferFromData(device, commandPool, &indirectDraw, sizeof(BladeDrawIndirect), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, numBladesBuffer, numBladesBufferMemory);
+
+    // Blades uniform buffer
+    BladesUniforms bladeDrawUniforms{};
+    bladeDrawUniforms.gravity = glm::vec4(0, -1, 0, 9.81f); // hard coded gravity and gravitational acceleration
+    bladeDrawUniforms.bladeCount = NUM_BLADES;
+
+    BufferUtils::CreateBufferFromData(device, commandPool, &bladeDrawUniforms, sizeof(bladeDrawUniforms), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, bladesUniformsBuffer, bladesUniformsBufferMemory);
 }
 
 VkBuffer Blades::GetBladesBuffer() const {
@@ -61,6 +73,14 @@ VkBuffer Blades::GetNumBladesBuffer() const {
     return numBladesBuffer;
 }
 
+VkBuffer Blades::GetBladesUniformsBuffer() const {
+    return bladesUniformsBuffer;
+}
+
+uint32_t Blades::GetBladesBufferSizeInBytes() const {
+    return NUM_BLADES * sizeof(Blade);
+}
+
 Blades::~Blades() {
     vkDestroyBuffer(device->GetVkDevice(), bladesBuffer, nullptr);
     vkFreeMemory(device->GetVkDevice(), bladesBufferMemory, nullptr);
@@ -68,4 +88,7 @@ Blades::~Blades() {
     vkFreeMemory(device->GetVkDevice(), culledBladesBufferMemory, nullptr);
     vkDestroyBuffer(device->GetVkDevice(), numBladesBuffer, nullptr);
     vkFreeMemory(device->GetVkDevice(), numBladesBufferMemory, nullptr);
+
+    vkDestroyBuffer(device->GetVkDevice(), bladesUniformsBuffer, nullptr);
+    vkFreeMemory(device->GetVkDevice(), bladesUniformsBufferMemory, nullptr);
 }

@@ -69,20 +69,30 @@ struct BladeDrawIndirect {
     uint32_t firstInstance;
 };
 
+struct alignas(16) BladesUniforms
+{
+    glm::vec4 gravity;
+    unsigned int bladeCount;
+};
+
 class Blades : public Model {
 private:
     VkBuffer bladesBuffer;
     VkBuffer culledBladesBuffer;
     VkBuffer numBladesBuffer;
+    VkBuffer bladesUniformsBuffer;
 
     VkDeviceMemory bladesBufferMemory;
     VkDeviceMemory culledBladesBufferMemory;
     VkDeviceMemory numBladesBufferMemory;
+    VkDeviceMemory bladesUniformsBufferMemory;
 
 public:
     Blades(Device* device, VkCommandPool commandPool, float planeDim);
     VkBuffer GetBladesBuffer() const;
     VkBuffer GetCulledBladesBuffer() const;
     VkBuffer GetNumBladesBuffer() const;
+    VkBuffer GetBladesUniformsBuffer() const;
+    uint32_t GetBladesBufferSizeInBytes() const;    // the same goes for culledBlades buffer to reserve enough space
     ~Blades();
 };
