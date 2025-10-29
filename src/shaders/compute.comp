@@ -28,9 +28,9 @@ struct Blade {
 // 1. Store the input blades
 // 2. Write out the culled blades
 // 3. Write the total number of blades remaining
-layout(set = 2, binding = 0) uniform BladeConstants 
-{
+layout(set = 2, binding = 0) uniform BladeUniforms {
     vec4 gravity;   // dir, acceleration
+    vec4 wind;      // wind direction, wind speed
     uint totalBladeCount;
 };
 
@@ -55,7 +55,44 @@ bool inBounds(float value, float bounds) {
     return (value >= -bounds) && (value <= bounds);
 }
 
+// Noise function adapted from iq: https://www.shadertoy.com/view/Msf3WH
+vec2 hash( vec2 p )
+{
+	p = vec2( dot(p,vec2(127.1,311.7)), dot(p,vec2(269.5,183.3)) );
+	return -1.0 + 2.0*fract(sin(p)*43758.5453123);
+}
 
+float noise( in vec2 p)
+{
+    const float K1 = 0.366025404; // (sqrt(3)-1)/2;
+    const float K2 = 0.211324865; // (3-sqrt(3))/6;
+
+	vec2  i = floor( p + (p.x+p.y)*K1 );
+    vec2  a = p - i + (i.x+i.y)*K2;
+    float m = step(a.y,a.x); 
+    vec2  o = vec2(m,1.0-m);
+    vec2  b = a - o + K2;
+	vec2  c = a - 1.0 + 2.0*K2;
+    vec3  h = max( 0.5-vec3(dot(a,a), dot(b,b), dot(c,c) ), 0.0 );
+	vec3  n = h*h*h*h*vec3( dot(a,hash(i+0.0)), dot(b,hash(i+o)), dot(c,hash(i+1.0)));
+    return dot( n, vec3(70.0) ) + 1;
+}
+
+vec2 windNoiseScaling(vec2 p, vec2 windDir) {
+    // y towards wind direction
+    vec2 right = vec2(windDir.y, -windDir.x);
+    vec2 newP = 0.200 * windDir * dot(windDir, p) + 
+                0.125 * right   * dot(right, p);
+    return newP;
+}
+
+
+#define FRUSTUM_CULL 1
+#define DISTANCE_CULL 1
+#define ORIENTATION_CULL 1
+
+#define WIND 1
+#define GRAVITY_N_RECOVERY 1
 
 void main() {
 	// Reset the number of blades to 0
@@ -67,11 +104,16 @@ void main() {
     uint bladeID =  gl_GlobalInvocationID.x;
     if (bladeID >= totalBladeCount) { return; }
 
-    // Constants
+    // Orientation culling constant
     const float orientationCullThreshold = 0.9;
-    const float cullingDistanceMax = 26;
-    const uint cullingBaseCount = 16;
+
+    // Frustum culling constant
     const float cullingFrustumBoundTolerance = 0.05f;
+
+    // Distance culling constant
+    const float cullingDistanceMax = 30;
+    const uint cullingBaseCount = 20;
+
 
     // Unpack the blade data
     Blade blade = blades[bladeID];
@@ -86,9 +128,17 @@ void main() {
 
     vec3 front = vec3(cos(rotation + HALF_PI), 0, sin(rotation + HALF_PI));
     vec3 side = vec3(cos(rotation), 0, sin(rotation));
-    
+
+    // vec2 newP = windNoiseScaling(v0.xz - wind.xz * totalTime, wind.xz);
+    // blade.v2.xyz = v0 + vec3(0, noise(newP), 0);
+    // blade.v1.xyz = blade.v2.xyz - vec3(0, 0.1, 0);
+    // uint i = atomicAdd(numBlades.vertexCount, 1);
+    // culledBlades[i] = blade;
+    // return;
+
     // Theoretically (and in the correct way) we need to transform the gravity to local space, 
     // but since the current implementation uses a fixed identity model matrix , we skip it for now.
+#if GRAVITY_N_RECOVERY
     vec3 gravity_dir = gravity.xyz;                 
     float gravitational_acceleration = gravity.w;
 
@@ -102,14 +152,24 @@ void main() {
     vec3 f_gEnv = mass * gravity_dir * gravitational_acceleration;
     vec3 f_gFront = 0.25 * front * length(f_gEnv);
     vec3 f_g = f_gEnv + f_gFront;
+#else
+    vec3 f_g = vec3(0);
+    vec3 f_recovery = vec3(0);
+#endif
 
     // TODO: Wind
+    vec3 f_w = vec3(0);
+#if WIND
+    float dirAlignFactor = 1 - dot(normalize(v2 - v0), wind.xyz);
+    float heightRatioFactor = dot(v2 - v0, up) / height;
 
+    vec2 noiseInput = windNoiseScaling(v0.xz - wind.xz * totalTime * 3, wind.xz);
+    float windIntensity = dirAlignFactor * heightRatioFactor * wind.w * noise(noiseInput);
+    f_w = wind.xyz * windIntensity; 
+#endif
 
-    vec3 translation = deltaTime * (f_recovery + f_g);
-    // translation = deltaTime * (f_g);
+    vec3 translation = deltaTime * (f_recovery + f_g + f_w);
     v2 += translation;
-
 
     // State validation
     v2 = v2 - up * min(dot(up, v2 - v0), 0);
@@ -128,20 +188,18 @@ void main() {
 
     blade.v1.xyz = v1_corrected;
     blade.v2.xyz = v2_corrected;
-
     blades[bladeID] = blade;
 
-	// TODO: Cull blades that are too far away or not in the camera frustum and write them
-	// to the culled blades buffer
-	// Note: to do this, you will need to use an atomic operation to read and update numBlades.vertexCount
-	// You want to write the visible blades to the buffer without write conflicts between threads
-    
+
     // Orientation culling 
     vec3 viewVec = v0 - camera.pos;
+#if ORIENTATION_CULL
     if (pow(dot(normalize(viewVec), side), 2) > orientationCullThreshold * orientationCullThreshold) {
         return;
     }
+#endif
 
+#if FRUSTUM_CULL
     // Frustum culling
     vec3 mid = 0.25 * v0 + 0.5 * v1 + 0.25 * v2;
 
@@ -165,13 +223,16 @@ void main() {
     if (!v0InBound && !midInBound && !v2InBound) {
         return;
     }
+#endif
 
+#if DISTANCE_CULL
     // Distance culling
     float dProj = length(viewVec - up * dot(viewVec, up));
     float cullingRatio = dProj / cullingDistanceMax;
     if (mod(bladeID, cullingBaseCount) < cullingBaseCount * cullingRatio) {
         return;
     }
+#endif
 
     // Passed cullings, add to draw buffer
     uint idx = atomicAdd(numBlades.vertexCount, 1);

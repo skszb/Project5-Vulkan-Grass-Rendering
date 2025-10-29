@@ -56,6 +56,7 @@ Blades::Blades(Device* device, VkCommandPool commandPool, float planeDim) : Mode
     // Blades uniform buffer
     BladesUniforms bladeDrawUniforms{};
     bladeDrawUniforms.gravity = glm::vec4(0, -1, 0, 9.81f); // hard coded gravity and gravitational acceleration
+    bladeDrawUniforms.wind = glm::vec4(glm::normalize(glm::vec3(1, 0, 1)), 4);
     bladeDrawUniforms.bladeCount = NUM_BLADES;
 
     BufferUtils::CreateBufferFromData(device, commandPool, &bladeDrawUniforms, sizeof(bladeDrawUniforms), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, bladesUniformsBuffer, bladesUniformsBufferMemory);
